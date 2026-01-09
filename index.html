@@ -441,14 +441,30 @@
         let lastError = null
         for (const url of cdnUrls) {
           try {
+            // Check if script with this URL already exists
+            const existingScript = document.querySelector(`script[src="${url}"]`)
+            if (existingScript) {
+              // Wait a bit for it to load if it's still loading
+              await new Promise(resolve => setTimeout(resolve, 1000))
+              if (window.loadPyodide) break
+              continue
+            }
+            
             const script = document.createElement('script')
             script.src = url
             document.head.appendChild(script)
             
             await new Promise((resolve, reject) => {
               script.onload = resolve
-              script.onerror = () => reject(new Error(`Failed to load from ${url}`))
-              setTimeout(() => reject(new Error('Timeout loading Pyodide')), 30000)
+              script.onerror = () => {
+                // Remove failed script
+                script.remove()
+                reject(new Error(`Failed to load from ${url}`))
+              }
+              setTimeout(() => {
+                script.remove()
+                reject(new Error('Timeout loading Pyodide'))
+              }, 30000)
             })
             
             if (window.loadPyodide) break
@@ -540,31 +556,23 @@ sys.stderr = StringIO()
   }
 
   function extractPythonCode(content) {
-    // Try to extract code from ```python code blocks
-    const codeBlockRegex = /```python\n([\s\S]*?)```/
+    // Try to extract code from ```python code blocks (with optional newline)
+    const codeBlockRegex = /```python\n?([\s\S]*?)```/
     const match = content.match(codeBlockRegex)
     
     if (match && match[1]) {
       return match[1].trim()
     }
     
-    // Alternative: look for ~~~python code blocks
-    const altCodeBlockRegex = /~~~python\n([\s\S]*?)~~~/
+    // Alternative: look for ~~~python code blocks (with optional newline)
+    const altCodeBlockRegex = /~~~python\n?([\s\S]*?)~~~/
     const altMatch = content.match(altCodeBlockRegex)
     
     if (altMatch && altMatch[1]) {
       return altMatch[1].trim()
     }
     
-    // If no code block found, check if the entire content looks like Python code
-    // This is a simple heuristic - look for common Python keywords
-    const pythonKeywords = ['def ', 'class ', 'import ', 'from ', 'print(', 'if ', 'for ', 'while ']
-    const hasPythonKeywords = pythonKeywords.some(keyword => content.includes(keyword))
-    
-    if (hasPythonKeywords) {
-      return content.trim()
-    }
-    
+    // If no code block found, don't attempt to guess - require explicit markers
     return null
   }
 
