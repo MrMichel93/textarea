@@ -570,7 +570,9 @@ sys.stderr = _original_stderr
   }
 
   function extractPythonCodeFromBlock(content, delimiter) {
-    const regex = new RegExp(`${delimiter}python\\n?([\\s\\S]*?)${delimiter}`)
+    // Escape special regex characters in delimiter
+    const escapedDelimiter = delimiter.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const regex = new RegExp(`${escapedDelimiter}python\\n?([\\s\\S]*?)${escapedDelimiter}`)
     const match = content.match(regex)
     return match && match[1] ? match[1].trim() : null
   }
