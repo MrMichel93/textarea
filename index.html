@@ -426,52 +426,61 @@
 
     pyodideLoadingPromise = (async () => {
       try {
-        // Check if Pyodide script is already loaded
-        if (!window.loadPyodide) {
-          // Load Pyodide from CDN - try multiple CDNs for reliability
-          const cdnUrls = [
-            'https://cdn.jsdelivr.net/pyodide/v0.24.1/full/pyodide.js',
-            'https://unpkg.com/pyodide@0.24.1/pyodide.js'
-          ]
-          
-          let lastError = null
-          for (const url of cdnUrls) {
-            try {
-              // Check if script with this URL already exists
-              const existingScript = document.querySelector(`script[src="${url}"]`)
-              if (existingScript && window.loadPyodide) {
-                break
-              }
-              
-              if (!existingScript) {
-                const script = document.createElement('script')
-                script.src = url
-                document.head.appendChild(script)
-                
-                await new Promise((resolve, reject) => {
-                  script.onload = resolve
-                  script.onerror = () => {
-                    // Remove failed script
-                    script.remove()
-                    reject(new Error(`Failed to load from ${url}`))
-                  }
-                  setTimeout(() => {
-                    script.remove()
-                    reject(new Error('Timeout loading Pyodide'))
-                  }, PYODIDE_LOAD_TIMEOUT)
-                })
-              }
-              
-              if (window.loadPyodide) break
-            } catch (error) {
-              lastError = error
-              continue
+        // Check if Pyodide is already available
+        if (window.loadPyodide) {
+          pyodide = await window.loadPyodide({
+            indexURL: 'https://cdn.jsdelivr.net/pyodide/v0.24.1/full/'
+          })
+          return pyodide
+        }
+        
+        // Load Pyodide from CDN - try multiple CDNs for reliability
+        const cdnUrls = [
+          'https://cdn.jsdelivr.net/pyodide/v0.24.1/full/pyodide.js',
+          'https://unpkg.com/pyodide@0.24.1/pyodide.js'
+        ]
+        
+        let lastError = null
+        for (const url of cdnUrls) {
+          try {
+            // Check if script with this URL already exists and successfully loaded
+            const existingScript = document.querySelector(`script[src="${url}"]`)
+            if (existingScript && window.loadPyodide) {
+              break
             }
+            
+            if (!existingScript) {
+              const script = document.createElement('script')
+              script.src = url
+              document.head.appendChild(script)
+              
+              let timeoutId
+              await new Promise((resolve, reject) => {
+                script.onload = () => {
+                  clearTimeout(timeoutId)
+                  resolve()
+                }
+                script.onerror = () => {
+                  clearTimeout(timeoutId)
+                  script.remove()
+                  reject(new Error(`Failed to load from ${url}`))
+                }
+                timeoutId = setTimeout(() => {
+                  script.remove()
+                  reject(new Error('Timeout loading Pyodide'))
+                }, PYODIDE_LOAD_TIMEOUT)
+              })
+            }
+            
+            if (window.loadPyodide) break
+          } catch (error) {
+            lastError = error
+            continue
           }
-          
-          if (!window.loadPyodide) {
-            throw lastError || new Error('Failed to load Pyodide from any CDN')
-          }
+        }
+        
+        if (!window.loadPyodide) {
+          throw lastError || new Error('Failed to load Pyodide from any CDN')
         }
 
         pyodide = await window.loadPyodide({
@@ -516,7 +525,7 @@
       
       // Capture stdout and stderr, preserving originals
       let output = ''
-      const stdoutCode = await py.runPythonAsync(`
+      py.runPython(`
 import sys
 from io import StringIO
 _original_stdout = sys.stdout
@@ -572,7 +581,8 @@ sys.stderr = _original_stderr
   function extractPythonCodeFromBlock(content, delimiter) {
     // Escape special regex characters in delimiter
     const escapedDelimiter = delimiter.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    const regex = new RegExp(`${escapedDelimiter}python\\n?([\\s\\S]*?)${escapedDelimiter}`)
+    // Allow optional whitespace and language variants after 'python' (e.g., python3, python {.py})
+    const regex = new RegExp(`${escapedDelimiter}python(?:[0-9]*|\\s+[^\\n]*)?\\n?([\\s\\S]*?)${escapedDelimiter}`)
     const match = content.match(regex)
     return match && match[1] ? match[1].trim() : null
   }
