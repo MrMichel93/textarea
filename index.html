@@ -1019,8 +1019,8 @@
 
     // Python execution
     let pyodide = null
-    let pyodideLoading = false
     let pyodideLoadFailed = false
+    let pyodideLoadPromise = null
 
     async function loadPyodideScript() {
       return new Promise((resolve, reject) => {
@@ -1044,44 +1044,46 @@
       if (pyodideLoadFailed) {
         throw new Error('Pyodide failed to load previously. Please refresh the page and try again.')
       }
-      if (pyodideLoading) {
-        // Wait for existing load to complete
-        while (pyodideLoading) {
-          await new Promise(resolve => setTimeout(resolve, 100))
-        }
-        return pyodide
+      if (pyodideLoadPromise) {
+        // Wait for existing load to complete using the promise
+        return pyodideLoadPromise
       }
       
-      pyodideLoading = true
-      try {
-        const outputInfoDiv = document.createElement('div')
-        outputInfoDiv.className = 'output-info'
-        outputInfoDiv.textContent = 'Loading Python environment...'
-        outputContent.innerHTML = ''
-        outputContent.appendChild(outputInfoDiv)
-        outputConsole.classList.add('visible')
-        
-        // Load Pyodide script
-        await loadPyodideScript()
-        
-        // Initialize Pyodide
-        pyodide = await window.loadPyodide()
-        
-        outputInfoDiv.textContent = 'Python environment loaded successfully!'
-        setTimeout(() => {
-          if (outputContent.firstChild === outputInfoDiv) {
-            hideOutput()
+      pyodideLoadPromise = (async () => {
+        try {
+          const outputInfoDiv = document.createElement('div')
+          outputInfoDiv.className = 'output-info'
+          outputInfoDiv.textContent = 'Loading Python environment...'
+          outputContent.innerHTML = ''
+          outputContent.appendChild(outputInfoDiv)
+          outputConsole.classList.add('visible')
+          
+          // Load Pyodide script
+          await loadPyodideScript()
+          
+          // Initialize Pyodide
+          pyodide = await window.loadPyodide()
+          
+          // Clear the loading message only if it's still the only content
+          if (outputContent.childNodes.length === 1 && outputContent.firstChild === outputInfoDiv) {
+            outputInfoDiv.textContent = 'Python environment loaded successfully!'
+            setTimeout(() => {
+              if (outputContent.childNodes.length === 1 && outputContent.firstChild === outputInfoDiv) {
+                hideOutput()
+              }
+            }, 1000)
           }
-        }, 1000)
-        
-        return pyodide
-      } catch (error) {
-        pyodideLoadFailed = true
-        showOutput('Error loading Python environment:\n' + error.message, true)
-        throw error
-      } finally {
-        pyodideLoading = false
-      }
+          
+          return pyodide
+        } catch (error) {
+          pyodideLoadFailed = true
+          pyodideLoadPromise = null
+          showOutput('Error loading Python environment:\n' + error.message, true)
+          throw error
+        }
+      })()
+      
+      return pyodideLoadPromise
     }
 
     async function runPythonCode() {
