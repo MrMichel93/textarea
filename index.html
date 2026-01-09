@@ -649,7 +649,8 @@
     
     // Numbers (hex, octal, binary, integers, floats with optional scientific notation)
     // Matches: 42, 3.14, .5, 5., 1.5e-10, 0xFF, 0o77, 0b1010
-    const number = /\b(?:0[xX][0-9a-fA-F]+|0[oO][0-7]+|0[bB][01]+|(?:\d+\.\d*|\d*\.\d+|\d+)(?:[eE][+-]?\d+)?)\b/y
+    // Note: Uses word boundary only at the end to allow .5 while preventing matching in identifiers
+    const number = /(?:0[xX][0-9a-fA-F]+|0[oO][0-7]+|0[bB][01]+|(?:\d+\.\d*|\d*\.\d+|\d+)(?:[eE][+-]?\d+)?)\b/y
     
     // Decorators
     const decorator = /@[\w.]+/y
@@ -665,8 +666,9 @@
     // d,c,f,r: start of keywords (def, class, for, return, etc.) and raw/f-strings
     // a,b,e,i,l,n,o,p,s,t,w: start of keywords (and, break, elif, if, lambda, not, or, pass, try, while, etc.)
     //                        and builtins (abs, bin, eval, int, len, next, oct, print, str, tuple, etc.)
+    // .: decimal numbers like .5
     // 0-9: numbers (including hex, octal, binary literals)
-    const specials = ['#', '"', "'", '@', 'd', 'c', 'f', 'r', 'a', 'b', 'e', 'i', 'l', 'n', 'o', 'p', 's', 't', 'w', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9']
+    const specials = ['#', '"', "'", '@', '.', 'd', 'c', 'f', 'r', 'a', 'b', 'e', 'i', 'l', 'n', 'o', 'p', 's', 't', 'w', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9']
 
     let i = 0
     while (i < input.length) {
