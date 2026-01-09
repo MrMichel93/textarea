@@ -256,6 +256,71 @@
     visibility: visible;
   }
 
+  #output-console {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: var(--elevated);
+    border-top: 1px solid rgba(128, 128, 128, 0.3);
+    box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.1);
+    max-height: 40vh;
+    overflow-y: auto;
+    display: none;
+    flex-direction: column;
+    z-index: 3;
+  }
+
+  #output-console.visible {
+    display: flex;
+  }
+
+  #output-console .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 15px;
+    border-bottom: 1px solid rgba(128, 128, 128, 0.2);
+    font: 14px / 1.5 system-ui;
+    font-weight: 600;
+  }
+
+  #output-console .close-btn {
+    background: none;
+    border: none;
+    color: var(--text);
+    cursor: pointer;
+    font-size: 20px;
+    padding: 0;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+  }
+
+  #output-console .close-btn:hover {
+    background-color: rgba(0, 0, 0, 0.1);
+  }
+
+  #output-console .content {
+    padding: 15px;
+    font-family: monospace;
+    font-size: 14px;
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+    flex: 1;
+  }
+
+  #output-console .error {
+    color: #ff3b30;
+  }
+
+  #output-console .success {
+    color: #34c759;
+  }
+
   @media print {
     .noprint {
       visibility: hidden !important;
@@ -303,6 +368,12 @@
     </svg>
     Save as TEXT
   </a>
+  <a class="item" id="run-python" href="" role="menuitem">
+    <svg aria-hidden="true" focusable="false" width="22" height="22">
+      <use xlink:href="#icon-play"></use>
+    </svg>
+    Run Python
+  </a>
   <a class="item" href="https://github.com/antonmedv/textarea" target="_blank" role="menuitem">
     <svg aria-hidden="true" focusable="false" width="22" height="22">
       <use xlink:href="#icon-github"></use>
@@ -311,6 +382,13 @@
   </a>
 </div>
 <div id="notification" class="noprint"></div>
+<div id="output-console" class="noprint">
+  <div class="header">
+    <span>Python Output</span>
+    <button class="close-btn" id="close-console" aria-label="Close console">×</button>
+  </div>
+  <div class="content" id="console-content"></div>
+</div>
 <script>
   initUI()
 
@@ -335,6 +413,137 @@
   }
 
   console.log('%cGitHub https://github.com/antonmedv/textarea', 'font-size: 16px; border: 1px solid lightblue; border-radius: 12px; padding: 10px 14px; ')
+
+  // Initialize Pyodide for Python execution
+  let pyodide = null
+  let pyodideLoading = false
+
+  async function loadPyodide() {
+    if (pyodide) return pyodide
+    if (pyodideLoading) {
+      // Wait for the loading to complete
+      while (pyodideLoading) {
+        await new Promise(resolve => setTimeout(resolve, 100))
+      }
+      return pyodide
+    }
+
+    pyodideLoading = true
+    try {
+      // Load Pyodide from CDN
+      const script = document.createElement('script')
+      script.src = 'https://cdn.jsdelivr.net/pyodide/v0.24.1/full/pyodide.js'
+      document.head.appendChild(script)
+      
+      await new Promise((resolve, reject) => {
+        script.onload = resolve
+        script.onerror = reject
+      })
+
+      pyodide = await window.loadPyodide({
+        indexURL: 'https://cdn.jsdelivr.net/pyodide/v0.24.1/full/'
+      })
+      
+      return pyodide
+    } catch (error) {
+      throw new Error('Failed to load Pyodide: ' + error.message)
+    } finally {
+      pyodideLoading = false
+    }
+  }
+
+  async function executePythonCode() {
+    const outputConsole = document.querySelector('#output-console')
+    const consoleContent = document.querySelector('#console-content')
+    
+    // Extract Python code from the editor
+    const content = article.textContent
+    const pythonCode = extractPythonCode(content)
+    
+    if (!pythonCode) {
+      consoleContent.textContent = 'No Python code found. Use ```python code blocks or select Python code to run.'
+      consoleContent.className = 'content error'
+      outputConsole.classList.add('visible')
+      return
+    }
+
+    // Show loading state
+    consoleContent.textContent = 'Loading Python interpreter...\n'
+    consoleContent.className = 'content'
+    outputConsole.classList.add('visible')
+
+    try {
+      // Load Pyodide if not already loaded
+      const py = await loadPyodide()
+      
+      consoleContent.textContent = 'Running Python code...\n'
+      
+      // Capture stdout
+      let output = ''
+      py.runPython(`
+import sys
+from io import StringIO
+sys.stdout = StringIO()
+sys.stderr = StringIO()
+`)
+
+      // Run the user's code
+      try {
+        await py.runPythonAsync(pythonCode)
+        
+        // Get the output
+        const stdout = py.runPython('sys.stdout.getvalue()')
+        const stderr = py.runPython('sys.stderr.getvalue()')
+        
+        output = stdout || ''
+        if (stderr) {
+          output += (output ? '\n' : '') + 'Errors:\n' + stderr
+        }
+        
+        if (!output) {
+          output = '(No output)'
+        }
+        
+        consoleContent.textContent = output
+        consoleContent.className = 'content success'
+      } catch (error) {
+        consoleContent.textContent = 'Error:\n' + error.message
+        consoleContent.className = 'content error'
+      }
+    } catch (error) {
+      consoleContent.textContent = 'Failed to initialize Python:\n' + error.message
+      consoleContent.className = 'content error'
+    }
+  }
+
+  function extractPythonCode(content) {
+    // Try to extract code from ```python code blocks
+    const codeBlockRegex = /```python\n([\s\S]*?)```/
+    const match = content.match(codeBlockRegex)
+    
+    if (match && match[1]) {
+      return match[1].trim()
+    }
+    
+    // Alternative: look for ~~~python code blocks
+    const altCodeBlockRegex = /~~~python\n([\s\S]*?)~~~/
+    const altMatch = content.match(altCodeBlockRegex)
+    
+    if (altMatch && altMatch[1]) {
+      return altMatch[1].trim()
+    }
+    
+    // If no code block found, check if the entire content looks like Python code
+    // This is a simple heuristic - look for common Python keywords
+    const pythonKeywords = ['def ', 'class ', 'import ', 'from ', 'print(', 'if ', 'for ', 'while ']
+    const hasPythonKeywords = pythonKeywords.some(keyword => content.includes(keyword))
+    
+    if (hasPythonKeywords) {
+      return content.trim()
+    }
+    
+    return null
+  }
 
   async function load() {
     try {
@@ -554,6 +763,10 @@
     const shareLink = document.querySelector('#share-link')
     const saveAsHTML = document.querySelector('#save-as-html')
     const saveAsText = document.querySelector('#save-as-text')
+    const runPython = document.querySelector('#run-python')
+    const outputConsole = document.querySelector('#output-console')
+    const closeConsole = document.querySelector('#close-console')
+    const consoleContent = document.querySelector('#console-content')
 
     button.addEventListener('click', event => {
       if (event.clientX || event.targetTouches) ripple(event)
@@ -600,6 +813,16 @@
       event.preventDefault()
       downloadTXT()
       hideMenu()
+    })
+
+    runPython.addEventListener('click', event => {
+      event.preventDefault()
+      executePythonCode()
+      hideMenu()
+    })
+
+    closeConsole.addEventListener('click', () => {
+      outputConsole.classList.remove('visible')
     })
   }
 
@@ -932,6 +1155,11 @@
     <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
     <path
       d="M9 19c-4.3 1.4 -4.3 -2.5 -6 -3m12 5v-3.5c0 -1 .1 -1.4 -.5 -2c2.8 -.3 5.5 -1.4 5.5 -6a4.6 4.6 0 0 0 -1.3 -3.2a4.2 4.2 0 0 0 -.1 -3.2s-1.1 -.3 -3.5 1.3a12.3 12.3 0 0 0 -6.2 0c-2.4 -1.6 -3.5 -1.3 -3.5 -1.3a4.2 4.2 0 0 0 -.1 3.2a4.6 4.6 0 0 0 -1.3 3.2c0 4.6 2.7 5.7 5.5 6c-.6 .6 -.6 1.2 -.5 2v3.5"/>
+  </symbol>
+  <symbol id="icon-play" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+          stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round">
+    <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+    <path d="M7 4v16l13 -8z"/>
   </symbol>
   <symbol id="icon-empty" viewBox="0 0 24 24"></symbol>
 </svg>
