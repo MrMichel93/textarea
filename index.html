@@ -647,8 +647,8 @@
     // Comments
     const comment = /#[^\n]*/y
     
-    // Numbers
-    const number = /\b\d+\.?\d*(?:[eE][+-]?\d+)?\b/y
+    // Numbers (integers and floats, including scientific notation)
+    const number = /\b\d+(?:\.\d+)?(?:[eE][+-]?\d+)?\b/y
     
     // Decorators
     const decorator = /@[\w.]+/y
@@ -659,6 +659,11 @@
     // Class definitions
     const classDef = /\bclass\s+(\w+)/y
 
+    // Special characters that might start a syntax element:
+    // #: comments, ": strings, ': strings, @: decorators
+    // d,c,f,r: start of keywords (def, class, for, return, etc.) and raw/f-strings
+    // a,b,e,i,l,n,o,p,s,t,w: start of keywords and builtins (and, break, elif, if, lambda, not, or, pass, str, try, while, etc.)
+    // 0-9: numbers
     const specials = ['#', '"', "'", '@', 'd', 'c', 'f', 'r', 'a', 'b', 'e', 'i', 'l', 'n', 'o', 'p', 's', 't', 'w', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9']
 
     let i = 0
