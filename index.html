@@ -332,6 +332,122 @@
       visibility: hidden !important;
     }
   }
+
+  /* Output console styles */
+  #output-console {
+    visibility: hidden;
+    opacity: 0;
+    transition: opacity 200ms ease-in-out;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 250px;
+    background: var(--elevated);
+    border-top: 1px solid rgba(0, 0, 0, 0.1);
+    overflow-y: auto;
+    font-family: monospace;
+    font-size: 14px;
+    padding: 12px;
+    z-index: 3;
+    box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.1);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    #output-console {
+      border-top: 1px solid rgba(255, 255, 255, 0.1);
+      box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.3);
+    }
+  }
+
+  #output-console.visible {
+    visibility: visible;
+    opacity: 1;
+  }
+
+  #output-console-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    #output-console-header {
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    }
+  }
+
+  #output-console-header h3 {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text);
+  }
+
+  #output-console-close {
+    background: none;
+    border: none;
+    color: var(--text);
+    cursor: pointer;
+    font-size: 20px;
+    padding: 0;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    outline: none;
+  }
+
+  #output-console-close:hover {
+    background: rgba(0, 0, 0, 0.05);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    #output-console-close:hover {
+      background: rgba(255, 255, 255, 0.1);
+    }
+  }
+
+  #output-console-close:focus-visible {
+    outline: 2px solid var(--outline);
+  }
+
+  #output-content {
+    white-space: pre-wrap;
+    word-break: break-word;
+    color: var(--text);
+  }
+
+  .output-error {
+    color: #d73a49;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    .output-error {
+      color: #ff7b72;
+    }
+  }
+
+  .output-info {
+    color: #6a737d;
+    font-style: italic;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    .output-info {
+      color: #8b949e;
+    }
+  }
+
+  #run-button.loading {
+    opacity: 0.6;
+    pointer-events: none;
+  }
 </style>
 <article contenteditable="plaintext-only" spellcheck autofocus></article>
 <button id="button" class="noprint">
@@ -374,6 +490,12 @@
     </svg>
     Save as TEXT
   </a>
+  <button class="item" id="run-python" role="menuitem">
+    <svg aria-hidden="true" focusable="false" width="22" height="22">
+      <use xlink:href="#icon-play"></use>
+    </svg>
+    Run Python
+  </button>
   <a class="item" href="https://github.com/antonmedv/textarea" target="_blank" role="menuitem">
     <svg aria-hidden="true" focusable="false" width="22" height="22">
       <use xlink:href="#icon-github"></use>
@@ -382,6 +504,13 @@
   </a>
 </div>
 <div id="notification" class="noprint"></div>
+<div id="output-console" class="noprint">
+  <div id="output-console-header">
+    <h3>Output</h3>
+    <button id="output-console-close" aria-label="Close output console">×</button>
+  </div>
+  <div id="output-content"></div>
+</div>
 <script>
   initUI()
 
@@ -819,6 +948,10 @@
     const shareLink = document.querySelector('#share-link')
     const saveAsHTML = document.querySelector('#save-as-html')
     const saveAsText = document.querySelector('#save-as-text')
+    const runPython = document.querySelector('#run-python')
+    const outputConsole = document.querySelector('#output-console')
+    const outputContent = document.querySelector('#output-content')
+    const outputConsoleClose = document.querySelector('#output-console-close')
 
     button.addEventListener('click', event => {
       if (event.clientX || event.targetTouches) ripple(event)
@@ -836,6 +969,19 @@
       notification.classList.add('visible')
       notification.textContent = message
       setTimeout(() => notification.classList.remove('visible'), 2e3)
+    }
+
+    function showOutput(content, isError = false) {
+      outputContent.innerHTML = ''
+      const pre = document.createElement('pre')
+      pre.className = isError ? 'output-error' : ''
+      pre.textContent = content
+      outputContent.appendChild(pre)
+      outputConsole.classList.add('visible')
+    }
+
+    function hideOutput() {
+      outputConsole.classList.remove('visible')
     }
 
     document.body.addEventListener('click', event => {
@@ -865,6 +1011,134 @@
       event.preventDefault()
       downloadTXT()
       hideMenu()
+    })
+    
+    outputConsoleClose.addEventListener('click', () => {
+      hideOutput()
+    })
+
+    // Python execution
+    let pyodide = null
+    let pyodideLoading = false
+    let pyodideLoadFailed = false
+
+    async function loadPyodideScript() {
+      return new Promise((resolve, reject) => {
+        // Check if already loaded
+        if (window.loadPyodide) {
+          resolve()
+          return
+        }
+
+        const script = document.createElement('script')
+        script.src = 'https://unpkg.com/pyodide@0.25.0/pyodide.js'
+        script.async = true
+        script.onload = () => resolve()
+        script.onerror = () => reject(new Error('Failed to load Pyodide library. Please check your internet connection or disable ad-blockers.'))
+        document.head.appendChild(script)
+      })
+    }
+
+    async function initPyodide() {
+      if (pyodide) return pyodide
+      if (pyodideLoadFailed) {
+        throw new Error('Pyodide failed to load previously. Please refresh the page and try again.')
+      }
+      if (pyodideLoading) {
+        // Wait for existing load to complete
+        while (pyodideLoading) {
+          await new Promise(resolve => setTimeout(resolve, 100))
+        }
+        return pyodide
+      }
+      
+      pyodideLoading = true
+      try {
+        const outputInfoDiv = document.createElement('div')
+        outputInfoDiv.className = 'output-info'
+        outputInfoDiv.textContent = 'Loading Python environment...'
+        outputContent.innerHTML = ''
+        outputContent.appendChild(outputInfoDiv)
+        outputConsole.classList.add('visible')
+        
+        // Load Pyodide script
+        await loadPyodideScript()
+        
+        // Initialize Pyodide
+        pyodide = await window.loadPyodide()
+        
+        outputInfoDiv.textContent = 'Python environment loaded successfully!'
+        setTimeout(() => {
+          if (outputContent.firstChild === outputInfoDiv) {
+            hideOutput()
+          }
+        }, 1000)
+        
+        return pyodide
+      } catch (error) {
+        pyodideLoadFailed = true
+        showOutput('Error loading Python environment:\n' + error.message, true)
+        throw error
+      } finally {
+        pyodideLoading = false
+      }
+    }
+
+    async function runPythonCode() {
+      try {
+        runPython.classList.add('loading')
+        
+        const code = article.textContent
+        if (!code.trim()) {
+          showOutput('No code to execute', false)
+          runPython.classList.remove('loading')
+          return
+        }
+
+        // Initialize Pyodide if not already loaded
+        const py = await initPyodide()
+
+        // Capture stdout and stderr
+        const stdout = []
+        const stderr = []
+        
+        py.setStdout({
+          batched: (text) => stdout.push(text)
+        })
+        
+        py.setStderr({
+          batched: (text) => stderr.push(text)
+        })
+
+        // Run the Python code
+        try {
+          await py.runPythonAsync(code)
+          
+          const output = stdout.join('')
+          const errors = stderr.join('')
+          
+          if (errors) {
+            showOutput(errors, true)
+          } else if (output) {
+            showOutput(output, false)
+          } else {
+            showOutput('Code executed successfully (no output)', false)
+          }
+        } catch (error) {
+          showOutput('Python Error:\n' + error.message, true)
+        }
+        
+      } catch (error) {
+        showOutput('Error:\n' + error.message, true)
+      } finally {
+        runPython.classList.remove('loading')
+        hideMenu()
+      }
+    }
+
+    runPython.addEventListener('click', event => {
+      event.preventDefault()
+      runPythonCode()
     })
   }
 
@@ -1197,6 +1471,11 @@
     <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
     <path
       d="M9 19c-4.3 1.4 -4.3 -2.5 -6 -3m12 5v-3.5c0 -1 .1 -1.4 -.5 -2c2.8 -.3 5.5 -1.4 5.5 -6a4.6 4.6 0 0 0 -1.3 -3.2a4.2 4.2 0 0 0 -.1 -3.2s-1.1 -.3 -3.5 1.3a12.3 12.3 0 0 0 -6.2 0c-2.4 -1.6 -3.5 -1.3 -3.5 -1.3a4.2 4.2 0 0 0 -.1 3.2a4.6 4.6 0 0 0 -1.3 3.2c0 4.6 2.7 5.7 5.5 6c-.6 .6 -.6 1.2 -.5 2v3.5"/>
+  </symbol>
+  <symbol id="icon-play" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+          stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round">
+    <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+    <path d="M7 4v16l13 -8z"/>
   </symbol>
   <symbol id="icon-empty" viewBox="0 0 24 24"></symbol>
 </svg>
