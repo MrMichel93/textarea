@@ -462,11 +462,19 @@
                 }
                 script.onerror = () => {
                   clearTimeout(timeoutId)
-                  script.remove()
+                  try {
+                    script.remove()
+                  } catch (e) {
+                    // Ignore if script was already removed
+                  }
                   reject(new Error(`Failed to load from ${url}`))
                 }
                 timeoutId = setTimeout(() => {
-                  script.remove()
+                  try {
+                    script.remove()
+                  } catch (e) {
+                    // Ignore if script was already removed
+                  }
                   reject(new Error('Timeout loading Pyodide'))
                 }, PYODIDE_LOAD_TIMEOUT)
               })
@@ -581,8 +589,8 @@ sys.stderr = _original_stderr
   function extractPythonCodeFromBlock(content, delimiter) {
     // Escape special regex characters in delimiter
     const escapedDelimiter = delimiter.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    // Allow optional whitespace and language variants after 'python' (e.g., python3, python {.py})
-    const regex = new RegExp(`${escapedDelimiter}python(?:[0-9]*|\\s+[^\\n]*)?\\n?([\\s\\S]*?)${escapedDelimiter}`)
+    // Allow optional version numbers (python3) or attribute blocks ({.py}) after 'python'
+    const regex = new RegExp(`${escapedDelimiter}python(?:[0-9]*|\\s*\\{[^}]*\\})?\\n?([\\s\\S]*?)${escapedDelimiter}`)
     const match = content.match(regex)
     return match && match[1] ? match[1].trim() : null
   }
