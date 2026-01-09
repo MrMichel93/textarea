@@ -111,6 +111,77 @@
     cursor: pointer;
   }
 
+  /* Python syntax highlighting */
+  .py-keyword {
+    color: #d73a49;
+    font-weight: 600;
+  }
+
+  .py-string {
+    color: #22863a;
+  }
+
+  .py-comment {
+    color: #6a737d;
+    font-style: italic;
+  }
+
+  .py-number {
+    color: #005cc5;
+  }
+
+  .py-function {
+    color: #6f42c1;
+  }
+
+  .py-class {
+    color: #6f42c1;
+    font-weight: 600;
+  }
+
+  .py-decorator {
+    color: #005cc5;
+    font-style: italic;
+  }
+
+  .py-builtin {
+    color: #e36209;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    .py-keyword {
+      color: #ff7b72;
+    }
+
+    .py-string {
+      color: #a5d6ff;
+    }
+
+    .py-comment {
+      color: #8b949e;
+    }
+
+    .py-number {
+      color: #79c0ff;
+    }
+
+    .py-function {
+      color: #d2a8ff;
+    }
+
+    .py-class {
+      color: #d2a8ff;
+    }
+
+    .py-decorator {
+      color: #79c0ff;
+    }
+
+    .py-builtin {
+      color: #ff9e64;
+    }
+  }
+
   #button {
     -webkit-tap-highlight-color: transparent;
     background-color: #0569fa;
@@ -315,7 +386,7 @@
   initUI()
 
   const article = document.querySelector('article')
-  const editor = new Editor(article, parseMarkdown)
+  const editor = new Editor(article, parsePython)
   article.addEventListener('input', debounce(500, save))
   article.addEventListener('blur', save)
   article.addEventListener('click', event => {
@@ -526,6 +597,191 @@
 
       if (matched) continue
 
+      let next = input.length
+      for (const ch of specials) {
+        const idx = input.indexOf(ch, i)
+        if (idx !== -1 && idx < next) next = idx
+      }
+
+      if (next === i) {
+        frag.appendChild(document.createTextNode(input[i]))
+        i++
+        continue
+      }
+
+      frag.appendChild(document.createTextNode(input.slice(i, next)))
+      i = next
+    }
+
+    article.textContent = ''
+    article.appendChild(frag)
+    article.normalize()
+  }
+
+  function parsePython(element) {
+    const input = element.textContent
+    const frag = document.createDocumentFragment()
+
+    // Python keywords
+    const keywords = /\b(and|as|assert|async|await|break|class|continue|def|del|elif|else|except|False|finally|for|from|global|if|import|in|is|lambda|None|nonlocal|not|or|pass|raise|return|True|try|while|with|yield)\b/y
+    
+    // Python built-in functions
+    const builtins = /\b(abs|all|any|ascii|bin|bool|bytearray|bytes|callable|chr|classmethod|compile|complex|delattr|dict|dir|divmod|enumerate|eval|exec|filter|float|format|frozenset|getattr|globals|hasattr|hash|help|hex|id|input|int|isinstance|issubclass|iter|len|list|locals|map|max|memoryview|min|next|object|oct|open|ord|pow|print|property|range|repr|reversed|round|set|setattr|slice|sorted|staticmethod|str|sum|super|tuple|type|vars|zip|__import__)\b/y
+    
+    // Strings (single, double, triple quotes, raw, formatted)
+    const strings = [
+      /"""[\s\S]*?"""/y,  // Triple double quotes
+      /'''[\s\S]*?'''/y,  // Triple single quotes
+      /f"""[\s\S]*?"""/y, // f-string triple double
+      /f'''[\s\S]*?'''/y, // f-string triple single
+      /r"""[\s\S]*?"""/y, // raw string triple double
+      /r'''[\s\S]*?'''/y, // raw string triple single
+      /f"(?:[^"\\]|\\.)*"/y,  // f-string double
+      /f'(?:[^'\\]|\\.)*'/y,  // f-string single
+      /r"(?:[^"\\]|\\.)*"/y,  // raw string double
+      /r'(?:[^'\\]|\\.)*'/y,  // raw string single
+      /"(?:[^"\\]|\\.)*"/y,   // Double quote string
+      /'(?:[^'\\]|\\.)*'/y,   // Single quote string
+    ]
+    
+    // Comments
+    const comment = /#[^\n]*/y
+    
+    // Numbers
+    const number = /\b\d+\.?\d*(?:[eE][+-]?\d+)?\b/y
+    
+    // Decorators
+    const decorator = /@[\w.]+/y
+    
+    // Function/method definitions
+    const funcDef = /\bdef\s+(\w+)/y
+    
+    // Class definitions
+    const classDef = /\bclass\s+(\w+)/y
+
+    const specials = ['#', '"', "'", '@', 'd', 'c', 'f', 'r', 'a', 'b', 'e', 'i', 'l', 'n', 'o', 'p', 's', 't', 'w', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9']
+
+    let i = 0
+    while (i < input.length) {
+      let matched = false
+
+      // Try to match comments first
+      comment.lastIndex = i
+      let res = comment.exec(input)
+      if (res && res.index === i) {
+        const span = document.createElement('span')
+        span.className = 'py-comment'
+        span.textContent = res[0]
+        frag.appendChild(span)
+        i += res[0].length
+        continue
+      }
+
+      // Try to match strings
+      for (const strRe of strings) {
+        strRe.lastIndex = i
+        res = strRe.exec(input)
+        if (res && res.index === i) {
+          const span = document.createElement('span')
+          span.className = 'py-string'
+          span.textContent = res[0]
+          frag.appendChild(span)
+          i += res[0].length
+          matched = true
+          break
+        }
+      }
+      if (matched) continue
+
+      // Try to match decorators
+      decorator.lastIndex = i
+      res = decorator.exec(input)
+      if (res && res.index === i) {
+        const span = document.createElement('span')
+        span.className = 'py-decorator'
+        span.textContent = res[0]
+        frag.appendChild(span)
+        i += res[0].length
+        continue
+      }
+
+      // Try to match function definitions
+      funcDef.lastIndex = i
+      res = funcDef.exec(input)
+      if (res && res.index === i) {
+        const kwSpan = document.createElement('span')
+        kwSpan.className = 'py-keyword'
+        kwSpan.textContent = 'def'
+        frag.appendChild(kwSpan)
+        
+        frag.appendChild(document.createTextNode(' '))
+        
+        const funcSpan = document.createElement('span')
+        funcSpan.className = 'py-function'
+        funcSpan.textContent = res[1]
+        frag.appendChild(funcSpan)
+        
+        i += res[0].length
+        continue
+      }
+
+      // Try to match class definitions
+      classDef.lastIndex = i
+      res = classDef.exec(input)
+      if (res && res.index === i) {
+        const kwSpan = document.createElement('span')
+        kwSpan.className = 'py-keyword'
+        kwSpan.textContent = 'class'
+        frag.appendChild(kwSpan)
+        
+        frag.appendChild(document.createTextNode(' '))
+        
+        const classSpan = document.createElement('span')
+        classSpan.className = 'py-class'
+        classSpan.textContent = res[1]
+        frag.appendChild(classSpan)
+        
+        i += res[0].length
+        continue
+      }
+
+      // Try to match keywords
+      keywords.lastIndex = i
+      res = keywords.exec(input)
+      if (res && res.index === i) {
+        const span = document.createElement('span')
+        span.className = 'py-keyword'
+        span.textContent = res[0]
+        frag.appendChild(span)
+        i += res[0].length
+        continue
+      }
+
+      // Try to match built-in functions
+      builtins.lastIndex = i
+      res = builtins.exec(input)
+      if (res && res.index === i) {
+        const span = document.createElement('span')
+        span.className = 'py-builtin'
+        span.textContent = res[0]
+        frag.appendChild(span)
+        i += res[0].length
+        continue
+      }
+
+      // Try to match numbers
+      number.lastIndex = i
+      res = number.exec(input)
+      if (res && res.index === i) {
+        const span = document.createElement('span')
+        span.className = 'py-number'
+        span.textContent = res[0]
+        frag.appendChild(span)
+        i += res[0].length
+        continue
+      }
+
+      // No special match, find next special character
       let next = input.length
       for (const ch of specials) {
         const idx = input.indexOf(ch, i)
